@@ -7,9 +7,16 @@ export interface NoteData {
   contentHtml: string;
   colorKey: string;
   collapsed: boolean;
+  pinned?: boolean;
+  zIndex?: number;
 }
 
 export interface BoardState {
   notes: Record<string, NoteData>;
   collapsedSize: { width: number; height: number };
+  darkMode: boolean;
+  searchQuery: string;
+  colorFilter: string | null;
+  maxZIndex: number;
 }
+

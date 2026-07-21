@@ -1,17 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { Editor } from "@tiptap/react";
 import MoreMenu from "./MoreMenu";
 import { isValidJson, prettyPrintJson } from "@/lib/json-utils";
 
 interface NoteToolbarProps {
   contentHtml: string;
   onContentChange: (html: string) => void;
+  editor: Editor | null;
 }
 
 export default function NoteToolbar({
   contentHtml,
   onContentChange,
+  editor,
 }: NoteToolbarProps) {
   const [showMore, setShowMore] = useState(false);
   const [isJson, setIsJson] = useState(false);
@@ -25,11 +28,6 @@ export default function NoteToolbar({
     return () => clearTimeout(timer);
   }, [contentHtml]);
 
-  const execCmd = useCallback((command: string, value?: string) => {
-    document.execCommand(command, false, value);
-    // Focus stays on contentEditable since we prevent mousedown on toolbar
-  }, []);
-
   const handleFormatJson = useCallback(() => {
     const text = getPlainText(contentHtml).trim();
     if (!isValidJson(text)) return;
@@ -39,49 +37,67 @@ export default function NoteToolbar({
     onContentChange(formatted);
   }, [contentHtml, onContentChange]);
 
+  const plainText = getPlainText(contentHtml).trim();
+  const wordCount = plainText ? plainText.split(/\s+/).filter(Boolean).length : 0;
+  const charCount = plainText.length;
+
   return (
     <div
-      className="flex items-center gap-1 border-t border-black/10 px-2 py-1"
+      className="flex items-center justify-between border-t border-black/10 px-2 py-1 select-none shrink-0"
       onMouseDown={(e) => e.preventDefault()}
     >
-      <ToolbarButton
-        label="In đậm"
-        shortcut="Ctrl+B"
-        icon={<BoldIcon />}
-        onClick={() => execCmd("bold")}
-      />
-      <ToolbarButton
-        label="In nghiêng"
-        shortcut="Ctrl+I"
-        icon={<ItalicIcon />}
-        onClick={() => execCmd("italic")}
-      />
-      <ToolbarButton
-        label="Gạch chân"
-        shortcut="Ctrl+U"
-        icon={<UnderlineIcon />}
-        onClick={() => execCmd("underline")}
-      />
-      <ToolbarButton
-        label="Gạch ngang"
-        shortcut="Ctrl+Alt+H"
-        icon={<StrikethroughIcon />}
-        onClick={() => execCmd("strikeThrough")}
-      />
-      <div className="relative ml-auto">
+      <div className="flex items-center gap-0.5">
         <ToolbarButton
-          label="Thêm tùy chọn"
-          shortcut=""
-          icon={<MoreIcon />}
-          onClick={() => setShowMore((v) => !v)}
+          label="In đậm"
+          shortcut="Ctrl+B"
+          icon={<BoldIcon />}
+          isActive={editor?.isActive("bold")}
+          onClick={() => editor?.chain().focus().toggleBold().run()}
         />
-        {showMore && (
-          <MoreMenu
-            isJsonEnabled={isJson}
-            onFormatJson={handleFormatJson}
-            onClose={() => setShowMore(false)}
+        <ToolbarButton
+          label="In nghiêng"
+          shortcut="Ctrl+I"
+          icon={<ItalicIcon />}
+          isActive={editor?.isActive("italic")}
+          onClick={() => editor?.chain().focus().toggleItalic().run()}
+        />
+        <ToolbarButton
+          label="Gạch chân"
+          shortcut="Ctrl+U"
+          icon={<UnderlineIcon />}
+          isActive={editor?.isActive("underline")}
+          onClick={() => editor?.chain().focus().toggleUnderline().run()}
+        />
+        <ToolbarButton
+          label="Gạch ngang"
+          shortcut="Ctrl+Alt+H"
+          icon={<StrikethroughIcon />}
+          isActive={editor?.isActive("strike")}
+          onClick={() => editor?.chain().focus().toggleStrike().run()}
+        />
+      </div>
+
+      <div className="flex items-center gap-2">
+        {/* Word and Char count */}
+        <span className="text-[10px] text-zinc-400 font-medium">
+          {wordCount}w • {charCount}c
+        </span>
+
+        <div className="relative">
+          <ToolbarButton
+            label="Thêm tùy chọn"
+            shortcut=""
+            icon={<MoreIcon />}
+            onClick={() => setShowMore((v) => !v)}
           />
-        )}
+          {showMore && (
+            <MoreMenu
+              isJsonEnabled={isJson}
+              onFormatJson={handleFormatJson}
+              onClose={() => setShowMore(false)}
+            />
+          )}
+        </div>
       </div>
     </div>
   );
@@ -91,11 +107,13 @@ function ToolbarButton({
   label,
   shortcut,
   icon,
+  isActive,
   onClick,
 }: {
   label: string;
   shortcut: string;
   icon: React.ReactNode;
+  isActive?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -103,7 +121,11 @@ function ToolbarButton({
       type="button"
       title={shortcut ? `${label} (${shortcut})` : label}
       aria-label={label}
-      className="flex h-7 w-7 items-center justify-center rounded text-zinc-500 hover:bg-zinc-200/60 hover:text-zinc-700"
+      className={`flex h-7 w-7 items-center justify-center rounded transition-colors ${
+        isActive
+          ? "bg-black/15 text-zinc-900 font-bold"
+          : "text-zinc-500 hover:bg-black/10 hover:text-zinc-700"
+      }`}
       onClick={onClick}
     >
       {icon}

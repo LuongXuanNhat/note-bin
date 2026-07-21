@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useEffect, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { NoteData } from "@/types/note";
 import { NOTE_COLORS } from "@/lib/colors";
 import { MIN_NOTE_WIDTH, MIN_NOTE_HEIGHT } from "@/lib/grid-utils";
@@ -9,6 +9,8 @@ import NoteHeader from "./NoteHeader";
 import NoteToolbar from "./NoteToolbar";
 import ColorPickerPopover from "./ColorPickerPopover";
 import DeleteConfirmPopover from "./DeleteConfirmPopover";
+import TiptapEditor from "./TiptapEditor";
+import { Editor } from "@tiptap/react";
 
 interface NoteCardProps {
   note: NoteData;
@@ -30,64 +32,37 @@ export default function NoteCard({
   const setColor = useBoardStore((s) => s.setColor);
   const toggleCollapse = useBoardStore((s) => s.toggleCollapse);
   const resizeNote = useBoardStore((s) => s.resizeNote);
+  const togglePinNote = useBoardStore((s) => s.togglePinNote);
+  const bringToFront = useBoardStore((s) => s.bringToFront);
+  const darkMode = useBoardStore((s) => s.darkMode);
 
   const [isResizing, setIsResizing] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const headerWrapperRef = useRef<HTMLDivElement>(null);
-  const color = NOTE_COLORS[note.colorKey] ?? NOTE_COLORS.white;
+  const [editor, setEditor] = useState<Editor | null>(null);
 
-  // During drag, apply offset directly to left/top instead of using transform
-  // so that on drop the position is already correct and no unwanted animation occurs
+  const headerWrapperRef = useRef<HTMLDivElement>(null);
+  const colorPreset = NOTE_COLORS[note.colorKey] ?? NOTE_COLORS.white;
+  const color = darkMode
+    ? { bg: colorPreset.darkBg, text: colorPreset.darkText }
+    : { bg: colorPreset.bg, text: colorPreset.text };
+
+  // During drag, apply offset directly to left/top
   const posX = isDragging && dragOffset ? note.x + dragOffset.x : note.x;
   const posY = isDragging && dragOffset ? note.y + dragOffset.y : note.y;
   const noteWidth = note.collapsed ? collapsedSize.width : note.width;
   const noteHeight = note.collapsed ? collapsedSize.height : note.height;
 
-  // Tracks whether the last content change came from user typing
-  const userTypingRef = useRef(false);
+  // Sticker note Z-Index logic:
+  // Dragging note gets 9999
+  // Pinned notes sit above unpinned notes (1000 + zIndex)
+  // Regular active notes sit at their assigned zIndex
+  const baseZ = note.zIndex ?? 10;
+  const computedZIndex = isDragging ? 9999 : note.pinned ? 1000 + baseZ : baseZ;
 
-  // Handle contentEditable input
-  const handleInput = useCallback(() => {
-    if (contentRef.current) {
-      userTypingRef.current = true;
-      updateContent(note.id, contentRef.current.innerHTML);
-    }
-  }, [note.id, updateContent]);
-
-  // Sync innerHTML ONLY when content changed externally (e.g. collapse/expand)
-  // Skip when the change is from the user typing to avoid cursor jumping
-  useEffect(() => {
-    if (userTypingRef.current) {
-      // This render was triggered by the user typing — don't touch the DOM
-      userTypingRef.current = false;
-      return;
-    }
-    if (contentRef.current && note.contentHtml) {
-      contentRef.current.innerHTML = note.contentHtml;
-    }
-  }, [note.contentHtml, note.collapsed]);
-
-  // Handle keyboard shortcuts
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    const isFormat = e.key === "b" || e.key === "i" || e.key === "u";
-    if ((e.ctrlKey || e.metaKey) && isFormat && !e.shiftKey && !e.altKey) {
-      e.preventDefault();
-      const cmdMap: Record<string, string> = {
-        b: "bold",
-        i: "italic",
-        u: "underline",
-      };
-      document.execCommand(cmdMap[e.key]);
-      return;
-    }
-    if (e.ctrlKey && e.altKey && e.key === "h") {
-      e.preventDefault();
-      document.execCommand("strikeThrough");
-      return;
-    }
-  }, []);
+  const handleCardClick = useCallback(() => {
+    bringToFront(note.id);
+  }, [bringToFront, note.id]);
 
   // Resize with pixel precision
   const resizeRef = useRef<{
@@ -141,20 +116,22 @@ export default function NoteCard({
 
   return (
     <div
-      className={`absolute flex flex-col rounded-lg border shadow-md ${
-        isDragging ? "z-50 shadow-xl" : "z-10"
+      className={`absolute flex flex-col rounded-lg border shadow-md transition-shadow dark:border-zinc-700/60 ${
+        isDragging ? "shadow-xl" : "hover:shadow-lg"
       }`}
+      onPointerDown={handleCardClick}
       style={{
         left: posX,
         top: posY,
         width: noteWidth,
         height: noteHeight,
+        zIndex: computedZIndex,
         backgroundColor: color.bg,
         color: color.text,
         transition:
           isDragging || isResizing
             ? "none"
-            : "left 200ms ease-out, top 200ms ease-out, width 200ms ease-out, height 200ms ease-out",
+            : "left 200ms ease-out, top 200ms ease-out, width 200ms ease-out, height 200ms ease-out, shadow 150ms",
         touchAction: "none",
       }}
     >
@@ -168,7 +145,8 @@ export default function NoteCard({
             const isEmpty =
               !note.contentHtml ||
               note.contentHtml.trim() === "" ||
-              note.contentHtml === "<br>";
+              note.contentHtml === "<br>" ||
+              note.contentHtml === "<p></p>";
             if (isEmpty) {
               deleteNote(note.id);
             } else {
@@ -177,6 +155,7 @@ export default function NoteCard({
           }}
           onToggleCollapse={() => toggleCollapse(note.id)}
           onDuplicate={() => duplicateNote(note.id)}
+          onTogglePin={() => togglePinNote(note.id)}
           onDragStart={(e) => onDragStart(e, note)}
         />
         {showColorPicker && (
@@ -194,7 +173,7 @@ export default function NoteCard({
       {/* Delete confirm overlay */}
       {showDeleteConfirm && (
         <div
-          className="absolute inset-0 z-50 flex items-center justify-center rounded-lg bg-black/5"
+          className="absolute inset-0 z-50 flex items-center justify-center rounded-lg bg-black/10 backdrop-blur-[1px]"
           onClick={() => setShowDeleteConfirm(false)}
           onPointerDown={(e) => e.stopPropagation()}
           role="presentation"
@@ -212,22 +191,16 @@ export default function NoteCard({
       {/* Content area */}
       {!note.collapsed && (
         <>
-          <div
-            ref={contentRef}
-            className="flex-1 overflow-y-auto px-3 py-1.5 text-sm outline-none"
-            contentEditable
-            suppressContentEditableWarning
-            onInput={handleInput}
-            onKeyDown={handleKeyDown}
-            style={{ minHeight: 0, color: color.text }}
-            data-note-id={note.id}
-            role="textbox"
-            aria-multiline="true"
-            aria-label="Nội dung note"
+          <TiptapEditor
+            contentHtml={note.contentHtml}
+            onChange={(html) => updateContent(note.id, html)}
+            textColor={color.text}
+            onEditorReady={setEditor}
           />
           <NoteToolbar
             contentHtml={note.contentHtml}
             onContentChange={(html) => updateContent(note.id, html)}
+            editor={editor}
           />
         </>
       )}
@@ -260,3 +233,4 @@ export default function NoteCard({
     </div>
   );
 }
+

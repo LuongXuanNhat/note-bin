@@ -9,6 +9,7 @@ interface NoteHeaderProps {
   onDeleteConfirmToggle: () => void;
   onToggleCollapse: () => void;
   onDuplicate: () => void;
+  onTogglePin: () => void;
   onDragStart: (e: React.PointerEvent) => void;
 }
 
@@ -19,6 +20,7 @@ export default function NoteHeader({
   onDeleteConfirmToggle,
   onToggleCollapse,
   onDuplicate,
+  onTogglePin,
   onDragStart,
 }: NoteHeaderProps) {
   return (
@@ -31,6 +33,11 @@ export default function NoteHeader({
       {/* Drag handle area (left side) */}
       <div className="flex items-center gap-1">
         <DragHandleIcon />
+        {note.pinned && (
+          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 bg-amber-100 dark:bg-amber-900/40 dark:text-amber-300 px-1.5 py-0.5 rounded">
+            Pinned
+          </span>
+        )}
       </div>
 
       {/* Action buttons (right side) */}
@@ -38,6 +45,15 @@ export default function NoteHeader({
         className="flex items-center gap-0.5"
         onPointerDown={(e) => e.stopPropagation()}
       >
+        {/* Pin note */}
+        <HeaderButton
+          label={note.pinned ? "Bỏ ghim" : "Ghim note"}
+          isActive={note.pinned}
+          onClick={onTogglePin}
+        >
+          <PinIcon pinned={note.pinned} />
+        </HeaderButton>
+
         {/* Color picker */}
         <HeaderButton label="Đổi màu" onClick={onColorPickerToggle}>
           <PaletteIcon />
@@ -70,10 +86,12 @@ export default function NoteHeader({
 
 function HeaderButton({
   label,
+  isActive,
   onClick,
   children,
 }: {
   label: string;
+  isActive?: boolean;
   onClick: (e: React.MouseEvent) => void;
   children: React.ReactNode;
 }) {
@@ -82,11 +100,34 @@ function HeaderButton({
       type="button"
       title={label}
       aria-label={label}
-      className="flex h-7 w-7 items-center justify-center rounded text-zinc-500 hover:bg-black/10 hover:text-zinc-700"
+      className={`flex h-7 w-7 items-center justify-center rounded transition-colors ${
+        isActive
+          ? "bg-amber-400/30 text-amber-700 dark:text-amber-300 font-bold"
+          : "text-zinc-500 hover:bg-black/10 hover:text-zinc-700"
+      }`}
       onClick={onClick}
     >
       {children}
     </button>
+  );
+}
+
+function PinIcon({ pinned }: { pinned?: boolean }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill={pinned ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <line x1="12" y1="17" x2="12" y2="22" />
+      <path d="M5 17h14l-1.5-6H6.5L5 17z" />
+      <path d="M9 11V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v7" />
+    </svg>
   );
 }
 
