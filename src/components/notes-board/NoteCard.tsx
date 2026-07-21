@@ -3,7 +3,7 @@
 import { useCallback, useRef, useEffect, useState } from "react";
 import { NoteData } from "@/types/note";
 import { NOTE_COLORS } from "@/lib/colors";
-import { GRID_GAP, snapColSpan, snapRowSpan } from "@/lib/grid-utils";
+import { MIN_NOTE_WIDTH, MIN_NOTE_HEIGHT } from "@/lib/grid-utils";
 import { useBoardStore } from "@/lib/store";
 import NoteHeader from "./NoteHeader";
 import NoteToolbar from "./NoteToolbar";
@@ -12,8 +12,6 @@ import DeleteConfirmPopover from "./DeleteConfirmPopover";
 
 interface NoteCardProps {
   note: NoteData;
-  pixel: { left: number; top: number; width: number; height: number };
-  boardWidth: number;
   isDragging: boolean;
   dragOffset: { x: number; y: number } | null;
   onDragStart: (e: React.PointerEvent, note: NoteData) => void;
@@ -21,8 +19,6 @@ interface NoteCardProps {
 
 export default function NoteCard({
   note,
-  pixel,
-  boardWidth,
   isDragging,
   dragOffset,
   onDragStart,
@@ -42,28 +38,36 @@ export default function NoteCard({
   const headerWrapperRef = useRef<HTMLDivElement>(null);
   const color = NOTE_COLORS[note.colorKey] ?? NOTE_COLORS.white;
 
-  const cellSize = note.collapsed
-    ? collapsedSize
-    : { width: pixel.width, height: pixel.height };
-  const posX = note.collapsed ? pixel.left : pixel.left;
-  const posY = note.collapsed ? pixel.top : pixel.top;
+  // During drag, apply offset directly to left/top instead of using transform
+  // so that on drop the position is already correct and no unwanted animation occurs
+  const posX = isDragging && dragOffset ? note.x + dragOffset.x : note.x;
+  const posY = isDragging && dragOffset ? note.y + dragOffset.y : note.y;
+  const noteWidth = note.collapsed ? collapsedSize.width : note.width;
+  const noteHeight = note.collapsed ? collapsedSize.height : note.height;
+
+  // Tracks whether the last content change came from user typing
+  const userTypingRef = useRef(false);
 
   // Handle contentEditable input
   const handleInput = useCallback(() => {
     if (contentRef.current) {
+      userTypingRef.current = true;
       updateContent(note.id, contentRef.current.innerHTML);
     }
   }, [note.id, updateContent]);
 
-  // Initialize innerHTML when note changes
+  // Sync innerHTML ONLY when content changed externally (e.g. collapse/expand)
+  // Skip when the change is from the user typing to avoid cursor jumping
   useEffect(() => {
-    if (
-      contentRef.current &&
-      contentRef.current.innerHTML !== note.contentHtml
-    ) {
+    if (userTypingRef.current) {
+      // This render was triggered by the user typing — don't touch the DOM
+      userTypingRef.current = false;
+      return;
+    }
+    if (contentRef.current && note.contentHtml) {
       contentRef.current.innerHTML = note.contentHtml;
     }
-  }, [note.contentHtml]);
+  }, [note.contentHtml, note.collapsed]);
 
   // Handle keyboard shortcuts
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -85,12 +89,12 @@ export default function NoteCard({
     }
   }, []);
 
-  // Resize logic with column/row snapping
+  // Resize with pixel precision
   const resizeRef = useRef<{
     startX: number;
     startY: number;
-    startColSpan: number;
-    startRowSpan: number;
+    startWidth: number;
+    startHeight: number;
   } | null>(null);
 
   const handleResizeStart = useCallback(
@@ -102,8 +106,8 @@ export default function NoteCard({
       resizeRef.current = {
         startX: e.clientX,
         startY: e.clientY,
-        startColSpan: note.width,
-        startRowSpan: note.height,
+        startWidth: note.width,
+        startHeight: note.height,
       };
       setIsResizing(true);
     },
@@ -112,30 +116,28 @@ export default function NoteCard({
 
   const handleResizeMove = useCallback(
     (e: React.PointerEvent) => {
-      if (!resizeRef.current || !boardWidth) return;
+      if (!resizeRef.current) return;
       const dx = e.clientX - resizeRef.current.startX;
       const dy = e.clientY - resizeRef.current.startY;
 
-      // Compute new pixel width/height, then snap to nearest column/row span
-      const newPxWidth =
-        resizeRef.current.startColSpan * (boardWidth / 72) + dx;
-      const newPxHeight = resizeRef.current.startRowSpan * 72 + dy;
+      const newWidth = Math.max(
+        MIN_NOTE_WIDTH,
+        resizeRef.current.startWidth + dx,
+      );
+      const newHeight = Math.max(
+        MIN_NOTE_HEIGHT,
+        resizeRef.current.startHeight + dy,
+      );
 
-      const colSpan = snapColSpan(newPxWidth, boardWidth);
-      const rowSpan = snapRowSpan(newPxHeight);
-
-      resizeNote(note.id, colSpan, rowSpan);
+      resizeNote(note.id, newWidth, newHeight);
     },
-    [resizeNote, note.id, boardWidth],
+    [resizeNote, note.id],
   );
 
   const handleResizeEnd = useCallback(() => {
     resizeRef.current = null;
     setIsResizing(false);
   }, []);
-
-  // Don't render if board width isn't available
-  if (!boardWidth) return null;
 
   return (
     <div
@@ -145,12 +147,8 @@ export default function NoteCard({
       style={{
         left: posX,
         top: posY,
-        width: cellSize.width,
-        height: cellSize.height,
-        transform:
-          isDragging && dragOffset
-            ? `translate(${dragOffset.x}px, ${dragOffset.y}px)`
-            : undefined,
+        width: noteWidth,
+        height: noteHeight,
         backgroundColor: color.bg,
         color: color.text,
         transition:
@@ -166,7 +164,17 @@ export default function NoteCard({
           note={note}
           isDragging={isDragging}
           onColorPickerToggle={() => setShowColorPicker((v) => !v)}
-          onDeleteConfirmToggle={() => setShowDeleteConfirm((v) => !v)}
+          onDeleteConfirmToggle={() => {
+            const isEmpty =
+              !note.contentHtml ||
+              note.contentHtml.trim() === "" ||
+              note.contentHtml === "<br>";
+            if (isEmpty) {
+              deleteNote(note.id);
+            } else {
+              setShowDeleteConfirm(true);
+            }
+          }}
           onToggleCollapse={() => toggleCollapse(note.id)}
           onDuplicate={() => duplicateNote(note.id)}
           onDragStart={(e) => onDragStart(e, note)}
@@ -218,7 +226,6 @@ export default function NoteCard({
             aria-label="Nội dung note"
           />
           <NoteToolbar
-            noteId={note.id}
             contentHtml={note.contentHtml}
             onContentChange={(html) => updateContent(note.id, html)}
           />

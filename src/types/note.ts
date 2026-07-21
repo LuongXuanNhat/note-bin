@@ -1,9 +1,9 @@
 export interface NoteData {
   id: string;
-  row: number;
-  col: number;
-  width: number;    // column span (default 10)
-  height: number;   // row span (default 3)
+  x: number;        // pixel x position (left)
+  y: number;        // pixel y position (top)
+  width: number;    // pixel width
+  height: number;   // pixel height
   contentHtml: string;
   colorKey: string;
   collapsed: boolean;

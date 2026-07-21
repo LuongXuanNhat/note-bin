@@ -3,16 +3,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useBoardStore } from "@/lib/store";
 import { NoteData } from "@/types/note";
-import {
-  GRID_GAP,
-  COLUMNS,
-  getGridBounds,
-  snapCol,
-  snapRow,
-  gridToPixel,
-  DEFAULT_COL_SPAN,
-  DEFAULT_ROW_SPAN,
-} from "@/lib/grid-utils";
 import NoteCard from "./NoteCard";
 import EmptyState from "./EmptyState";
 
@@ -22,15 +12,14 @@ export default function NotesBoard() {
   const moveNote = useBoardStore((s) => s.moveNote);
 
   const [mounted, setMounted] = useState(false);
-  const [boardWidth, setBoardWidth] = useState(1200);
   const containerRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef<HTMLDivElement>(null);
 
   // Drag state
   const dragStateRef = useRef<{
     note: NoteData;
-    startRow: number;
-    startCol: number;
+    startX: number;
+    startY: number;
     pointerStartX: number;
     pointerStartY: number;
   } | null>(null);
@@ -41,23 +30,19 @@ export default function NotesBoard() {
   const [draggingId, setDraggingId] = useState<string | null>(null);
 
   // Hydrate Zustand persist on mount
-  useEffect(() => {
-    useBoardStore.persist.rehydrate();
+  // We track hydration completion via state + useCallback to
+  // satisfy the react-hooks/set-state-in-effect rule.
+  const handleHydrated = useCallback(() => {
     setMounted(true);
-  }, []);
+  }, [setMounted]);
 
-  // Track board width via ResizeObserver
   useEffect(() => {
-    const board = boardRef.current;
-    if (!board) return;
-    const ro = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        setBoardWidth(entry.contentRect.width);
-      }
+    const unsub = useBoardStore.persist.onFinishHydration(() => {
+      handleHydrated();
     });
-    ro.observe(board);
-    return () => ro.disconnect();
-  }, [mounted]);
+    useBoardStore.persist.rehydrate();
+    return unsub;
+  }, [handleHydrated]);
 
   const notesList = Object.values(notes);
 
@@ -69,8 +54,8 @@ export default function NotesBoard() {
 
       dragStateRef.current = {
         note,
-        startRow: note.row,
-        startCol: note.col,
+        startX: note.x,
+        startY: note.y,
         pointerStartX: e.clientX,
         pointerStartY: e.clientY,
       };
@@ -95,27 +80,28 @@ export default function NotesBoard() {
       if (!dragStateRef.current || !boardRef.current) return;
 
       const state = dragStateRef.current;
-      const boardRect = boardRef.current.getBoundingClientRect();
-      const px = e.clientX - boardRect.left;
-      const py = e.clientY - boardRect.top;
-      const targetCol = snapCol(px, boardWidth);
-      const targetRow = snapRow(py);
+      const dx = e.clientX - state.pointerStartX;
+      const dy = e.clientY - state.pointerStartY;
+      const newX = state.startX + dx;
+      const newY = state.startY + dy;
 
-      if (targetRow !== state.startRow || targetCol !== state.startCol) {
-        moveNote(state.note.id, targetRow, targetCol);
+      if (newX !== state.startX || newY !== state.startY) {
+        moveNote(state.note.id, newX, newY);
       }
 
       dragStateRef.current = null;
       setDraggingId(null);
       setDragOffset(null);
     },
-    [boardWidth, moveNote],
+    [moveNote],
   );
 
-  // Board height
-  const { maxRow } = getGridBounds(notesList);
-  const effectiveRows = Math.max(maxRow + 3, 5);
-  const boardHeight = effectiveRows * (72 + GRID_GAP) + GRID_GAP;
+  // Board height based on max note bottom
+  const maxBottom = notesList.reduce(
+    (max, n) => Math.max(max, n.y + n.height),
+    0,
+  );
+  const boardHeight = Math.max(maxBottom + 60, 500);
 
   if (!mounted) return null;
 
@@ -132,7 +118,7 @@ export default function NotesBoard() {
           + Thêm note
         </button>
         <span className="ml-auto text-xs text-zinc-400">
-          72 cột &middot; {notesList.length} note(s)
+          {notesList.length} note(s)
         </span>
       </div>
 
@@ -155,26 +141,15 @@ export default function NotesBoard() {
             onPointerUp={handleDragEnd}
             onPointerCancel={handleDragEnd}
           >
-            {notesList.map((note) => {
-              const pixel = gridToPixel(
-                note.row,
-                note.col,
-                note.width,
-                note.height,
-                boardWidth,
-              );
-              return (
-                <NoteCard
-                  key={note.id}
-                  note={note}
-                  pixel={pixel}
-                  boardWidth={boardWidth}
-                  isDragging={draggingId === note.id}
-                  dragOffset={draggingId === note.id ? dragOffset : null}
-                  onDragStart={handleDragStart}
-                />
-              );
-            })}
+            {notesList.map((note) => (
+              <NoteCard
+                key={note.id}
+                note={note}
+                isDragging={draggingId === note.id}
+                dragOffset={draggingId === note.id ? dragOffset : null}
+                onDragStart={handleDragStart}
+              />
+            ))}
           </div>
         </div>
       )}

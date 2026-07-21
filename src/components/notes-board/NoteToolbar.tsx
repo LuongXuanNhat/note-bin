@@ -5,13 +5,11 @@ import MoreMenu from "./MoreMenu";
 import { isValidJson, prettyPrintJson } from "@/lib/json-utils";
 
 interface NoteToolbarProps {
-  noteId: string;
   contentHtml: string;
   onContentChange: (html: string) => void;
 }
 
 export default function NoteToolbar({
-  noteId,
   contentHtml,
   onContentChange,
 }: NoteToolbarProps) {
@@ -202,9 +200,12 @@ function getPlainText(html: string): string {
   if (typeof document !== "undefined") {
     const temp = document.createElement("div");
     temp.innerHTML = html;
-    return temp.textContent || temp.innerText || "";
+    const text = temp.textContent || temp.innerText || "";
+    // Normalize non-breaking spaces (\u00A0 from &nbsp;) to regular spaces
+    // because contentEditable preserves indentation as &nbsp; which breaks JSON.parse
+    return text.replace(/\u00A0/g, " ");
   }
-  return html.replace(/<[^>]*>/g, "");
+  return html.replace(/<[^>]*>/g, "").replace(/\u00A0/g, " ");
 }
 
 function escapeHtml(text: string): string {

@@ -3,14 +3,7 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { NoteData, BoardState } from "@/types/note";
-import {
-  findFirstEmptyCell,
-  getGridBounds,
-  insertRowAfter,
-  DEFAULT_COL_SPAN,
-  DEFAULT_ROW_SPAN,
-  COLUMNS,
-} from "@/lib/grid-utils";
+import { DEFAULT_NOTE_WIDTH, DEFAULT_NOTE_HEIGHT } from "@/lib/grid-utils";
 import { DEFAULT_COLOR_KEY } from "@/lib/colors";
 
 let noteCounter = 0;
@@ -29,8 +22,8 @@ interface BoardActions {
   updateContent: (id: string, html: string) => void;
   setColor: (id: string, colorKey: string) => void;
   toggleCollapse: (id: string) => void;
-  resizeNote: (id: string, colSpan: number, rowSpan: number) => void;
-  moveNote: (id: string, targetRow: number, targetCol: number) => void;
+  resizeNote: (id: string, width: number, height: number) => void;
+  moveNote: (id: string, x: number, y: number) => void;
 }
 
 export type BoardStore = BoardState & BoardActions;
@@ -46,26 +39,21 @@ export const useBoardStore = create<BoardStore>()(
       addNoteGlobal: () => {
         const state = get();
         const notesList = Object.values(state.notes);
-        const { maxRow } = getGridBounds(notesList);
-        const cell = findFirstEmptyCell(notesList, Math.max(maxRow, 0));
 
-        let targetRow: number;
-        let targetCol: number;
-
-        if (cell) {
-          targetRow = cell.row;
-          targetCol = cell.col;
-        } else {
-          targetRow = Math.max(maxRow, 0) + 1;
-          targetCol = 0;
-        }
+        // Cascading placement to avoid overlapping
+        const baseX = 30;
+        const baseY = 30;
+        const step = 40;
+        const count = notesList.length;
+        const offsetX = (count * step) % 400;
+        const offsetY = (count * step) % 400;
 
         const newNote: NoteData = {
           id: generateId(),
-          row: targetRow,
-          col: targetCol,
-          width: DEFAULT_COL_SPAN,
-          height: DEFAULT_ROW_SPAN,
+          x: baseX + offsetX,
+          y: baseY + offsetY,
+          width: DEFAULT_NOTE_WIDTH,
+          height: DEFAULT_NOTE_HEIGHT,
           contentHtml: "",
           colorKey: DEFAULT_COLOR_KEY,
           collapsed: false,
@@ -79,37 +67,10 @@ export const useBoardStore = create<BoardStore>()(
         const note = state.notes[id];
         if (!note) return;
 
-        const notesList = Object.values(state.notes);
-        const occupied = new Set(notesList.map((n) => `${n.row},${n.col}`));
-
-        let newRow = note.row;
-        let newCol = note.col;
-
-        // Try right first, then left, then new row below
-        for (const offset of [1, -1]) {
-          const c = note.col + offset;
-          if (c >= 0 && c < COLUMNS && !occupied.has(`${note.row},${c}`)) {
-            newCol = c;
-            newRow = note.row;
-            break;
-          }
-        }
-
-        if (newCol === note.col && newRow === note.row) {
-          // Both sides occupied → insert row below
-          const updatedNotes = insertRowAfter(notesList, note.row);
-          newRow = note.row + 1;
-          const updatedMap: Record<string, NoteData> = {};
-          for (const n of updatedNotes) {
-            updatedMap[n.id] = n;
-          }
-          set({ notes: { ...state.notes, ...updatedMap } });
-        }
-
         const newNote: NoteData = {
           id: generateId(),
-          row: newRow,
-          col: newCol,
+          x: note.x + 30,
+          y: note.y + 30,
           width: note.width,
           height: note.height,
           contentHtml: "",
@@ -117,13 +78,14 @@ export const useBoardStore = create<BoardStore>()(
           collapsed: false,
         };
 
-        set({ notes: { ...get().notes, [newNote.id]: newNote } });
+        set({ notes: { ...state.notes, [newNote.id]: newNote } });
       },
 
       deleteNote: (id: string) => {
         const state = get();
-        const { [id]: removed, ...rest } = state.notes;
-        set({ notes: rest });
+        const newNotes = { ...state.notes };
+        delete newNotes[id];
+        set({ notes: newNotes });
       },
 
       updateContent: (id: string, html: string) => {
@@ -156,37 +118,33 @@ export const useBoardStore = create<BoardStore>()(
         });
       },
 
-      resizeNote: (id: string, colSpan: number, rowSpan: number) => {
+      resizeNote: (id: string, width: number, height: number) => {
         const state = get();
         const note = state.notes[id];
         if (!note) return;
         set({
           notes: {
             ...state.notes,
-            [id]: { ...note, width: colSpan, height: rowSpan },
+            [id]: { ...note, width, height },
           },
         });
       },
 
-      moveNote: (id: string, targetRow: number, targetCol: number) => {
+      moveNote: (id: string, x: number, y: number) => {
         const state = get();
         const note = state.notes[id];
         if (!note) return;
 
-        const clampedRow = Math.max(0, targetRow);
-        const clampedCol = Math.max(0, Math.min(COLUMNS - 1, targetCol));
-
-        // Allow overlap — simply move the note
         set({
           notes: {
             ...state.notes,
-            [id]: { ...note, row: clampedRow, col: clampedCol },
+            [id]: { ...note, x, y },
           },
         });
       },
     }),
     {
-      name: "note-board-v1",
+      name: "note-board-v2",
       storage: createJSONStorage(() => localStorage),
       // Don't hydrate automatically to avoid SSR mismatch
       skipHydration: true,
