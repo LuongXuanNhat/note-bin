@@ -25,6 +25,10 @@ export default function NotesBoard() {
   const boardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    useBoardStore.persist.rehydrate();
+  }, []);
+
+  useEffect(() => {
     setMounted(true);
   }, []);
 
@@ -141,7 +145,11 @@ export default function NotesBoard() {
               boardRef.current.style.transition = "transform 150ms ease-out";
             }
 
-            window.removeEventListener("mousemove", handleWindowMouseMove, true);
+            window.removeEventListener(
+              "mousemove",
+              handleWindowMouseMove,
+              true,
+            );
             window.removeEventListener("mouseup", handleWindowMouseUp, true);
           }
         };
@@ -268,7 +276,7 @@ export default function NotesBoard() {
         {/* Left Actions */}
         <div className="flex items-center gap-2">
           <h1 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 mr-2">
-            NoteBin
+            Sổ tay ghi chú
           </h1>
           <button
             type="button"
@@ -316,10 +324,11 @@ export default function NotesBoard() {
               type="button"
               title="Tất cả màu"
               onClick={() => setColorFilter(null)}
-              className={`px-2 py-1 text-xs font-semibold rounded ${colorFilter === null
+              className={`px-2 py-1 text-xs font-semibold rounded ${
+                colorFilter === null
                   ? "bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-xs"
                   : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
-                }`}
+              }`}
             >
               All
             </button>
@@ -329,10 +338,11 @@ export default function NotesBoard() {
                 type="button"
                 title={`Lọc: ${color.label}`}
                 onClick={() => setColorFilter(key === colorFilter ? null : key)}
-                className={`h-5 w-5 rounded-full border transition-transform ${colorFilter === key
+                className={`h-5 w-5 rounded-full border transition-transform ${
+                  colorFilter === key
                     ? "scale-125 ring-2 ring-zinc-800 dark:ring-zinc-200"
                     : "hover:scale-110"
-                  }`}
+                }`}
                 style={{
                   backgroundColor: color.bg,
                   borderColor: key === "white" ? "#d1d5db" : "transparent",
@@ -364,7 +374,9 @@ export default function NotesBoard() {
 
           <button
             type="button"
-            title={darkMode ? "Chuyển sang Chế độ Sáng" : "Chuyển sang Chế độ Tối"}
+            title={
+              darkMode ? "Chuyển sang Chế độ Sáng" : "Chuyển sang Chế độ Tối"
+            }
             onClick={toggleDarkMode}
             className="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700 transition-colors"
           >
@@ -381,12 +393,13 @@ export default function NotesBoard() {
       ) : (
         <div
           ref={scrollContainerRef}
-          className={`flex-1 overflow-hidden bg-zinc-100/50 dark:bg-zinc-950 transition-colors select-none ${isPanning
+          className={`flex-1 overflow-hidden bg-zinc-100/50 dark:bg-zinc-950 transition-colors select-none ${
+            isPanning
               ? "cursor-grabbing"
               : isShiftPressed
                 ? "cursor-grab"
                 : "cursor-default"
-            }`}
+          }`}
         >
           <div
             ref={boardRef}
@@ -500,4 +513,3 @@ function MoonIcon() {
     </svg>
   );
 }
-

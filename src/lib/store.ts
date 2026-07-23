@@ -158,16 +158,40 @@ export const useBoardStore = create<BoardStore>()(
         if (!note) return;
 
         const nextZ = state.maxZIndex + 1;
+        const gap = 24;
+        const existingNotes = Object.values(state.notes);
+
+        // Try placing to the right first, then below
+        let newX = note.x + note.width + gap;
+        let newY = note.y;
+        const rightRect = { x: newX, y: newY, w: note.width, h: note.height };
+        const hasCollision = existingNotes.some((n) => {
+          if (n.id === id) return false;
+          const nW = n.collapsed ? state.collapsedSize.width : n.width;
+          const nH = n.collapsed ? state.collapsedSize.height : n.height;
+          return !(
+            rightRect.x + rightRect.w <= n.x ||
+            rightRect.x >= n.x + nW ||
+            rightRect.y + rightRect.h <= n.y ||
+            rightRect.y >= n.y + nH
+          );
+        });
+
+        if (hasCollision) {
+          // Place below the note
+          newX = note.x;
+          newY = note.y + note.height + gap;
+        }
 
         const newNote: NoteData = {
           id: generateId(),
-          x: note.x + 30,
-          y: note.y + 30,
+          x: newX,
+          y: newY,
           width: note.width,
           height: note.height,
-          contentHtml: note.contentHtml,
+          contentHtml: "",
           colorKey: note.colorKey,
-          collapsed: note.collapsed,
+          collapsed: false,
           pinned: false,
           zIndex: nextZ,
         };
